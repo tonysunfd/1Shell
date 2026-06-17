@@ -36,7 +36,7 @@ function createBridgeService({ hostService, auditService, sshPool, sshShellPool,
    * @param {string} [options.source] - 调用来源 ('mcp' | 'bridge_api')
    * @returns {Promise<{stdout: string, stderr: string, exitCode: number, durationMs: number}>}
    */
-  async function execOnHost(hostId, command, timeoutMs, { source = 'bridge_api', clientIp, auditCommand, signal, onOutput } = {}) {
+  async function execOnHost(hostId, command, timeoutMs, { source = 'bridge_api', clientIp, auditCommand, signal, onOutput, preferExec = false, freshExec = false } = {}) {
     throwIfAborted(signal);
 
     const safeAuditCommand = auditCommand || command;
@@ -73,12 +73,12 @@ function createBridgeService({ hostService, auditService, sshPool, sshShellPool,
     // 持久 shell 模式（所有远端调用优先走此路径）
     // 优势：单次 SSH 握手，后续命令写 stdin，无 liveness check，极低延迟
     // 并发安全：sshShellPool 内置队列，同一 host 的并发命令自动排队
-    if (sshShellPool) {
+    if (sshShellPool && !preferExec) {
       return execViaShellPool(hostId, command, timeout, { source, hostName, clientIp, auditCommand: safeAuditCommand, signal, onOutput });
     }
 
     // 降级：没有 shell pool 时走 exec 模式（兼容旧配置）
-    return execViaExec(hostId, command, timeout, { source, hostName, clientIp, auditCommand: safeAuditCommand, signal, onOutput });
+    return execViaExec(hostId, command, timeout, { source, hostName, clientIp, auditCommand: safeAuditCommand, signal, onOutput, freshExec });
   }
 
   // ─── 本机模式 ───────────────────────────────────────────────────────────
@@ -135,7 +135,7 @@ function createBridgeService({ hostService, auditService, sshPool, sshShellPool,
 
   // ─── exec 模式（原有逻辑）────────────────────────────────────────────────
 
-  function execViaExec(hostId, command, timeout, { source, hostName, clientIp, auditCommand, signal, onOutput }) {
+  function execViaExec(hostId, command, timeout, { source, hostName, clientIp, auditCommand, signal, onOutput, freshExec = false }) {
     return new Promise((resolve, reject) => {
       if (signal?.aborted) return reject(makeAbortError());
       const startAt = Date.now();
@@ -145,7 +145,7 @@ function createBridgeService({ hostService, auditService, sshPool, sshShellPool,
       let targetClient = null;
       let proxyClientRef = null;
 
-      const usePool = Boolean(sshPool);
+      const usePool = Boolean(sshPool) && !freshExec;
 
       function cleanup(healthy) {
         if (timer) { clearTimeout(timer); timer = null; }

@@ -88,12 +88,16 @@ printf '1Shell Probe Agent uninstalled\n'
 set -eu
 test -x /opt/1shell/probe-agent/probe-agent
 test -f /etc/1shell-probe-agent.env
+# 优先检查进程是否已存在，避免服务刚重启时的短暂状态切换导致误判。
+if pgrep -f '/opt/1shell/probe-agent/probe-agent' >/dev/null 2>&1; then
+  exit 0
+fi
 if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
   systemctl is-active --quiet 1shell-probe-agent.service
 elif command -v rc-service >/dev/null 2>&1; then
   rc-service 1shell-probe-agent status >/dev/null 2>&1
 else
-  pgrep -f '/opt/1shell/probe-agent/probe-agent' >/dev/null 2>&1
+  exit 1
 fi
 `;
   }
@@ -174,12 +178,16 @@ exit "$failed"
       source: relayUpstreamId ? 'probe_agent_relay_install' : 'probe_agent_install',
       clientIp,
       auditCommand: relayUpstreamId ? 'Install 1Shell Probe Agent via Relay (tokens redacted)' : 'Install 1Shell Probe Agent (tokens redacted)',
+      preferExec: true,
+      freshExec: true,
     });
     if (result.exitCode === 0) {
-      const verifyResult = await bridgeService.execOnHost(hostId, buildVerifyInstallScript(), 30000, {
+      const verifyResult = await bridgeService.execOnHost(hostId, buildVerifyInstallScript(), 45000, {
         source: 'probe_agent_install_verify',
         clientIp,
         auditCommand: 'Verify 1Shell Probe Agent installation',
+        preferExec: true,
+        freshExec: true,
       });
       if (verifyResult.exitCode !== 0) result = mergeVerifyFailure(result, verifyResult);
     }
@@ -196,12 +204,16 @@ exit "$failed"
       source: 'probe_agent_uninstall',
       clientIp,
       auditCommand: 'Uninstall 1Shell Probe Agent',
+      preferExec: true,
+      freshExec: true,
     });
     if (result.exitCode === 0) {
       const verifyResult = await bridgeService.execOnHost(hostId, buildVerifyUninstallScript(), 30000, {
         source: 'probe_agent_uninstall_verify',
         clientIp,
         auditCommand: 'Verify 1Shell Probe Agent uninstallation',
+        preferExec: true,
+        freshExec: true,
       });
       if (verifyResult.exitCode !== 0) {
         result = mergeVerifyFailure(result, verifyResult, '卸载命令已返回成功，但目标机仍残留运行中的服务、进程或 Agent 文件。');
@@ -275,12 +287,16 @@ fi
       source: 'probe_agent_restart',
       clientIp,
       auditCommand: 'Update and restart 1Shell Probe Agent',
+      preferExec: true,
+      freshExec: true,
     });
     if (result.exitCode === 0) {
-      const verifyResult = await bridgeService.execOnHost(hostId, buildVerifyInstallScript(), 30000, {
+      const verifyResult = await bridgeService.execOnHost(hostId, buildVerifyInstallScript(), 45000, {
         source: 'probe_agent_restart_verify',
         clientIp,
         auditCommand: 'Verify 1Shell Probe Agent after restart',
+        preferExec: true,
+        freshExec: true,
       });
       if (verifyResult.exitCode !== 0) {
         result = mergeVerifyFailure(result, verifyResult, '重启命令已返回成功，但未在目标机验证到运行中的 1Shell Probe Agent。');
@@ -307,6 +323,8 @@ fi
       source: 'probe_agent_logs',
       clientIp,
       auditCommand: `View 1Shell Probe Agent logs (last ${safeLines} lines)`,
+      preferExec: true,
+      freshExec: true,
     });
     return { result, lines: safeLines };
   }
