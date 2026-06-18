@@ -413,6 +413,24 @@ const migrations = [
       `);
     },
   },
+  {
+    version: 10,
+    name: 'probe latency: persist latency in raw and aggregated probe samples',
+    up(db) {
+      if (!columnExists(db, 'probe_samples', 'latency_ms')) {
+        db.exec('ALTER TABLE probe_samples ADD COLUMN latency_ms REAL');
+      }
+
+      for (const table of ['probe_samples_1m', 'probe_samples_1h', 'probe_samples_1d']) {
+        if (!columnExists(db, table, 'latency_avg')) {
+          db.exec(`ALTER TABLE ${table} ADD COLUMN latency_avg REAL`);
+        }
+        if (!columnExists(db, table, 'latency_max')) {
+          db.exec(`ALTER TABLE ${table} ADD COLUMN latency_max REAL`);
+        }
+      }
+    },
+  },
 ];
 
 function runMigrations(db, { logger } = {}) {

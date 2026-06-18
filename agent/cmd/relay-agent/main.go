@@ -686,6 +686,7 @@ func buildProbe(agent Agent, latest LatestPayload, hasLatest bool) map[string]an
 	probe["memoryUsage"] = nestedNumber(payload, "memory", "usage")
 	probe["swapUsage"] = nestedNumber(payload, "swap", "usage")
 	probe["diskUsage"] = nestedNumber(payload, "disk", "usage")
+	probe["latencyMs"] = numberValue(payload, "latencyMs")
 	probe["load1"] = nestedNumber(payload, "load", "load1")
 	probe["load5"] = nestedNumber(payload, "load", "load5")
 	probe["load15"] = nestedNumber(payload, "load", "load15")

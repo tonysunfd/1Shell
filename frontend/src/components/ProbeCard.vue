@@ -59,7 +59,7 @@ const trendAvailable = computed(() => {
   );
 });
 
-const metricTabs: MetricKey[] = ['bandwidth', 'cpuUsage', 'memoryUsage', 'diskUsage', 'load'];
+const metricTabs: MetricKey[] = ['bandwidth', 'latency', 'cpuUsage', 'memoryUsage', 'diskUsage', 'load'];
 const timeWindows: TimeWindow[] = ['1h', '6h', '24h', '7d', '30d'];
 
 function onDetailClick(): void { emit('toggleDetail', props.probe.hostId); }

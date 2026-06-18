@@ -48,6 +48,7 @@ function appendLiveSample(history: Map<string, ProbeSample[]>, list: ProbeEntry[
       host_id: p.hostId,
       source: p.source === 'relay_agent' ? 'relay_agent' : 'agent',
       reported_at: reportedAt,
+      latency_ms: p.latencyMs ?? null,
       cpu_usage: p.cpuUsage ?? null,
       memory_usage: p.memoryUsage ?? null,
       swap_usage: p.swapUsage ?? null,

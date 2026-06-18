@@ -5,6 +5,7 @@ import {
   type MetricKey,
   buildTickIndexes,
   formatBandwidth,
+  formatLatency,
   formatTrendTime,
   getSampleValue,
 } from '@/utils/probe';
@@ -54,6 +55,7 @@ const maxValue = computed<number>(() => {
     if (p.primary > m) m = p.primary;
     if (p.secondary !== undefined && p.secondary > m) m = p.secondary;
   }
+  if (props.metric === 'latency') return Math.max(m, 10);
   // 百分比类指标固定 100 上限
   if (props.metric === 'cpuUsage' || props.metric === 'memoryUsage' || props.metric === 'diskUsage') {
     return Math.max(m, 100);
@@ -86,6 +88,7 @@ const secondaryPath = computed(() => isDual.value ? buildPath((p) => p.secondary
 
 function formatY(value: number): string {
   if (props.metric === 'bandwidth') return formatBandwidth(value);
+  if (props.metric === 'latency') return formatLatency(Math.round(value));
   if (props.metric === 'cpuUsage' || props.metric === 'memoryUsage' || props.metric === 'diskUsage') {
     return `${Math.round(value)}%`;
   }
@@ -117,7 +120,7 @@ const lastTime = computed(() => points.value[points.value.length - 1]?.time ?? n
         </template>
         <span v-else class="probe-trend-legend-item">
           <span class="probe-trend-legend-line probe-trend-line-single"></span>
-          <span>{{ metric === 'cpuUsage' ? 'CPU' : metric === 'memoryUsage' ? '内存' : metric === 'diskUsage' ? '磁盘' : metric === 'load' ? 'Load 1m' : '指标' }}</span>
+          <span>{{ metric === 'latency' ? '延时' : metric === 'cpuUsage' ? 'CPU' : metric === 'memoryUsage' ? '内存' : metric === 'diskUsage' ? '磁盘' : metric === 'load' ? 'Load 1m' : '指标' }}</span>
         </span>
       </div>
     </div>

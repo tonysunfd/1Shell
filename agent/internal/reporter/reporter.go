@@ -19,6 +19,7 @@ type Reporter struct {
 	cfg    *config.Config
 	client *http.Client
 	ua     string
+	lastLatencyMs *int64
 }
 
 // New constructs a Reporter.
@@ -32,7 +33,7 @@ func New(cfg *config.Config, agentVersion string) *Reporter {
 
 // Send marshals a snapshot to the report payload and POSTs it.
 func (r *Reporter) Send(ctx context.Context, snap collector.Snapshot, agentVersion string) error {
-	payload := buildPayload(r.cfg.HostID, agentVersion, snap)
+	payload := buildPayload(r.cfg.HostID, agentVersion, snap, r.lastLatencyMs)
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("marshal payload: %w", err)
@@ -47,17 +48,20 @@ func (r *Reporter) Send(ctx context.Context, snap collector.Snapshot, agentVersi
 	req.Header.Set("Authorization", "Bearer "+r.cfg.AgentToken)
 	req.Header.Set("User-Agent", r.ua)
 
+	startedAt := time.Now()
 	resp, err := r.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("post: %w", err)
 	}
 	defer resp.Body.Close()
+	latencyMs := time.Since(startedAt).Milliseconds()
 
 	if resp.StatusCode >= 400 {
 		preview, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 		return fmt.Errorf("server %d: %s", resp.StatusCode, string(preview))
 	}
 	io.Copy(io.Discard, resp.Body)
+	r.lastLatencyMs = &latencyMs
 	return nil
 }
 
@@ -79,8 +83,8 @@ func formatPlatform(platform collector.PlatformInfo) string {
 	return name
 }
 
-func buildPayload(hostID, agentVersion string, snap collector.Snapshot) map[string]any {
-	return map[string]any{
+func buildPayload(hostID, agentVersion string, snap collector.Snapshot, latencyMs *int64) map[string]any {
+	payload := map[string]any{
 		"hostId":       hostID,
 		"agentVersion": agentVersion,
 		"capabilities": []string{"file.listDir"},
@@ -152,4 +156,8 @@ func buildPayload(hostID, agentVersion string, snap collector.Snapshot) map[stri
 			},
 		},
 	}
+	if latencyMs != nil && *latencyMs > 0 {
+		payload["latencyMs"] = *latencyMs
+	}
+	return payload
 }

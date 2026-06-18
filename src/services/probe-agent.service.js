@@ -49,6 +49,10 @@ function normalizeAgentPayload(payload, agent = {}) {
     ?? parseNumber(body.disk?.partitions?.find?.((item) => item.mount === '/')?.usage)
     ?? parseNumber(body.disk?.partitions?.[0]?.usage);
   const reportedAt = body.timestamp || agent.last_seen_at || nowIso();
+  const latencyMs = parseNumber(body.latencyMs)
+    ?? parseNumber(body.latency_ms)
+    ?? parseNumber(body.network?.latencyMs)
+    ?? null;
 
   return {
     hostId: agent.host_id || body.hostId,
@@ -63,7 +67,7 @@ function normalizeAgentPayload(payload, agent = {}) {
     agentLastSeenAt: agent.last_seen_at || reportedAt,
     platform: body.platform || null,
     platformInfo: body.platformInfo && typeof body.platformInfo === 'object' ? body.platformInfo : null,
-    latencyMs: null,
+    latencyMs,
     cpuUsage: parseNumber(body.cpu?.usage),
     cpuIowait: parseNumber(body.cpu?.iowait),
     cpuSteal: parseNumber(body.cpu?.steal),
@@ -151,14 +155,15 @@ function createProbeAgentService({ db, hostService, trafficService = null }) {
     insertSample: db.prepare(`
       INSERT INTO probe_samples (
         host_id, source, reported_at,
+        latency_ms,
         cpu_usage, memory_usage, swap_usage, disk_usage,
         load1, load5, load15,
         rx_bps, tx_bps, rx_bytes, tx_bytes,
         process_count, uptime_sec, payload
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `),
     listSamplesByHost: db.prepare(`
-      SELECT host_id, source, reported_at,
+      SELECT host_id, source, reported_at, latency_ms,
         cpu_usage, memory_usage, swap_usage, disk_usage,
         load1, load5, load15,
         rx_bps, tx_bps, rx_bytes, tx_bytes,
@@ -369,6 +374,10 @@ function createProbeAgentService({ db, hostService, trafficService = null }) {
       host_id: hostId,
       source,
       reported_at: reportedAt,
+      latency_ms: parseNumber(body.latencyMs)
+        ?? parseNumber(body.latency_ms)
+        ?? parseNumber(body.network?.latencyMs)
+        ?? null,
       cpu_usage: parseNumber(body.cpu?.usage),
       memory_usage: memoryUsage,
       swap_usage: swapUsage,
@@ -391,6 +400,7 @@ function createProbeAgentService({ db, hostService, trafficService = null }) {
       host_id: probe.hostId,
       source,
       reported_at: reportedAt,
+      latency_ms: parseNumber(probe.latencyMs),
       cpu_usage: parseNumber(probe.cpuUsage),
       memory_usage: parseNumber(probe.memoryUsage),
       swap_usage: parseNumber(probe.swapUsage),
@@ -410,6 +420,7 @@ function createProbeAgentService({ db, hostService, trafficService = null }) {
   function hasSampleMetrics(row) {
     return [
       row.cpu_usage,
+      row.latency_ms,
       row.memory_usage,
       row.swap_usage,
       row.disk_usage,
@@ -431,6 +442,7 @@ function createProbeAgentService({ db, hostService, trafficService = null }) {
       if (existing) return false;
       stmts.insertSample.run(
         row.host_id, row.source, row.reported_at,
+        row.latency_ms,
         row.cpu_usage, row.memory_usage, row.swap_usage, row.disk_usage,
         row.load1, row.load5, row.load15,
         row.rx_bps, row.tx_bps, row.rx_bytes, row.tx_bytes,

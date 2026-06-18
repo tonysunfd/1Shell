@@ -50,12 +50,13 @@ function createProbeAggregatorService({ db, logger } = {}) {
   const stmts = {
     aggregate1m: db.prepare(`
       INSERT OR REPLACE INTO probe_samples_1m
-        (host_id, bucket_at, cpu_avg, cpu_max, memory_avg, memory_max, swap_avg,
+        (host_id, bucket_at, latency_avg, latency_max, cpu_avg, cpu_max, memory_avg, memory_max, swap_avg,
          disk_avg, disk_max, load1_avg, load1_max,
          rx_bps_avg, rx_bps_max, tx_bps_avg, tx_bps_max, sample_count)
       SELECT
         host_id,
         strftime('%Y-%m-%dT%H:%M:00.000Z', reported_at) AS bucket_at,
+        AVG(latency_ms), MAX(latency_ms),
         AVG(cpu_usage), MAX(cpu_usage),
         AVG(memory_usage), MAX(memory_usage),
         AVG(swap_usage),
@@ -70,12 +71,13 @@ function createProbeAggregatorService({ db, logger } = {}) {
     `),
     aggregate1h: db.prepare(`
       INSERT OR REPLACE INTO probe_samples_1h
-        (host_id, bucket_at, cpu_avg, cpu_max, memory_avg, memory_max, swap_avg,
+        (host_id, bucket_at, latency_avg, latency_max, cpu_avg, cpu_max, memory_avg, memory_max, swap_avg,
          disk_avg, disk_max, load1_avg, load1_max,
          rx_bps_avg, rx_bps_max, tx_bps_avg, tx_bps_max, sample_count)
       SELECT
         host_id,
         strftime('%Y-%m-%dT%H:00:00.000Z', bucket_at) AS hour_bucket,
+        AVG(latency_avg), MAX(latency_max),
         AVG(cpu_avg), MAX(cpu_max),
         AVG(memory_avg), MAX(memory_max),
         AVG(swap_avg),
@@ -90,12 +92,13 @@ function createProbeAggregatorService({ db, logger } = {}) {
     `),
     aggregate1d: db.prepare(`
       INSERT OR REPLACE INTO probe_samples_1d
-        (host_id, bucket_at, cpu_avg, cpu_max, memory_avg, memory_max, swap_avg,
+        (host_id, bucket_at, latency_avg, latency_max, cpu_avg, cpu_max, memory_avg, memory_max, swap_avg,
          disk_avg, disk_max, load1_avg, load1_max,
          rx_bps_avg, rx_bps_max, tx_bps_avg, tx_bps_max, sample_count)
       SELECT
         host_id,
         strftime('%Y-%m-%dT00:00:00.000Z', bucket_at) AS day_bucket,
+        AVG(latency_avg), MAX(latency_max),
         AVG(cpu_avg), MAX(cpu_max),
         AVG(memory_avg), MAX(memory_max),
         AVG(swap_avg),
@@ -214,7 +217,7 @@ function createProbeAggregatorService({ db, logger } = {}) {
       : res === '1h' ? 'probe_samples_1h'
       : 'probe_samples_1d';
     const rows = db.prepare(`
-      SELECT bucket_at, cpu_avg, cpu_max, memory_avg, memory_max, swap_avg,
+      SELECT bucket_at, latency_avg, latency_max, cpu_avg, cpu_max, memory_avg, memory_max, swap_avg,
              disk_avg, disk_max, load1_avg, load1_max,
              rx_bps_avg, rx_bps_max, tx_bps_avg, tx_bps_max, sample_count
       FROM ${table}

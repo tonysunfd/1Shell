@@ -92,6 +92,7 @@ export interface ProbeSample {
   host_id: string;
   source: string;
   reported_at: string;
+  latency_ms: number | null;
   cpu_usage: number | null;
   memory_usage: number | null;
   swap_usage: number | null;
@@ -110,6 +111,8 @@ export interface ProbeSample {
 // B1 时序聚合表的一行（来自 /api/probe-agents/:hostId/timeseries）
 export interface TimeseriesPoint {
   bucket_at: string;
+  latency_avg: number | null;
+  latency_max: number | null;
   cpu_avg: number | null;
   cpu_max: number | null;
   memory_avg: number | null;
@@ -151,6 +154,7 @@ export function timeseriesToSamples(hostId: string, points: TimeseriesPoint[]): 
     host_id: hostId,
     source: 'agent',
     reported_at: p.bucket_at,
+    latency_ms: p.latency_avg,
     cpu_usage: p.cpu_avg,
     memory_usage: p.memory_avg,
     swap_usage: p.swap_avg,
@@ -167,10 +171,11 @@ export function timeseriesToSamples(hostId: string, points: TimeseriesPoint[]): 
   }));
 }
 
-export type MetricKey = 'bandwidth' | 'cpuUsage' | 'memoryUsage' | 'diskUsage' | 'load';
+export type MetricKey = 'bandwidth' | 'latency' | 'cpuUsage' | 'memoryUsage' | 'diskUsage' | 'load';
 
 export const METRIC_LABELS: Readonly<Record<MetricKey, string>> = Object.freeze({
   bandwidth: '带宽',
+  latency: '延时',
   cpuUsage: 'CPU',
   memoryUsage: '内存',
   diskUsage: '磁盘',
@@ -179,7 +184,8 @@ export const METRIC_LABELS: Readonly<Record<MetricKey, string>> = Object.freeze(
 
 export function getSampleValue(sample: ProbeSample, metric: MetricKey): number | null {
   let v: number | null = null;
-  if (metric === 'cpuUsage') v = sample.cpu_usage;
+  if (metric === 'latency') v = sample.latency_ms;
+  else if (metric === 'cpuUsage') v = sample.cpu_usage;
   else if (metric === 'memoryUsage') v = sample.memory_usage;
   else if (metric === 'diskUsage') v = sample.disk_usage;
   else if (metric === 'load') v = sample.load1;
