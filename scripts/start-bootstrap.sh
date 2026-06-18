@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd "$(dirname "$0")"
-ROOT_DIR="$(pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$ROOT_DIR"
 NODE_VERSION="${NODE_VERSION:-v20.18.3}"
 NODE_DIST_BASE="${NODE_DIST_BASE:-https://nodejs.org/dist}"
 NODE_DIR="$ROOT_DIR/runtime/node"

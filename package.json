@@ -4,7 +4,7 @@
   "description": "1Shell - AI-assisted VPS and server management console",
   "main": "desktop/main.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "bash scripts/start-bootstrap.sh",
     "dev": "nodemon server.js",
     "desktop:prepare": "npm --prefix frontend run build",
     "desktop:dev": "electron .",
