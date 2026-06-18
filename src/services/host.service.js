@@ -46,6 +46,7 @@ function saveLocalHostConfig(config) {
 
 function createHostService({ hostRepository }) {
   const pendingOsProbeHosts = new Set();
+  const activeConnectionTargetMap = new Map();
 
   function normalizeHostLinks(links) {
     if (!Array.isArray(links)) return [];
@@ -87,6 +88,7 @@ function createHostService({ hostRepository }) {
       return getLocalHost();
     }
 
+    const activeTarget = activeConnectionTargetMap.get(host.id) || null;
     return {
       id: host.id,
       type: 'ssh',
@@ -102,6 +104,13 @@ function createHostService({ hostRepository }) {
       latencyFailoverThresholdMs: Number.isFinite(Number(host.latencyFailoverThresholdMs))
         ? Number(host.latencyFailoverThresholdMs)
         : DEFAULT_LATENCY_FAILOVER_THRESHOLD_MS,
+      activeConnectionTarget: activeTarget ? {
+        kind: activeTarget.kind,
+        label: activeTarget.label,
+        host: activeTarget.host,
+        port: activeTarget.port,
+        connectedAt: activeTarget.connectedAt || null,
+      } : null,
       username: host.username,
       authType: host.authType,
       proxyHostId: host.proxyHostId || null,
@@ -342,6 +351,19 @@ function createHostService({ hostRepository }) {
     return findStoredHost(hostId);
   }
 
+  function getActiveConnectionTarget(hostId) {
+    if (!hostId || hostId === LOCAL_HOST_ID) return null;
+    const activeTarget = activeConnectionTargetMap.get(hostId);
+    if (!activeTarget) return null;
+    return {
+      kind: activeTarget.kind,
+      label: activeTarget.label,
+      host: activeTarget.host,
+      port: activeTarget.port,
+      connectedAt: activeTarget.connectedAt || null,
+    };
+  }
+
   function buildStoredHost(payload, existing = null) {
     const authType = payload.authType === 'privateKey' ? 'privateKey' : 'password';
     const timestamp = nowIso();
@@ -542,6 +564,17 @@ function createHostService({ hostRepository }) {
     return config;
   }
 
+  function rememberActiveConnectionTarget(hostId, target) {
+    if (!hostId || !target) return;
+    activeConnectionTargetMap.set(hostId, {
+      kind: target.kind,
+      label: target.label,
+      host: target.host,
+      port: normalizePort(target.port, 22),
+      connectedAt: nowIso(),
+    });
+  }
+
   function connectToHost(hostId, options = {}) {
     const { Client } = require('ssh2');
     const { probeOs = true } = options;
@@ -568,6 +601,7 @@ function createHostService({ hostRepository }) {
           if (options.readyTimeout) targetConfig.readyTimeout = options.readyTimeout;
           const client = new Client();
           client.on('ready', () => {
+            rememberActiveConnectionTarget(host.id, target);
             if (probeOs) maybeRefreshHostOsInfo(host, { client, proxyClient: null }, { force: true });
             resolve({ client, proxyClient: null, target });
           });
@@ -622,6 +656,7 @@ function createHostService({ hostRepository }) {
             delete targetConnConfig.port;
 
             targetClient.on('ready', () => {
+              rememberActiveConnectionTarget(host.id, target);
               if (probeOs) maybeRefreshHostOsInfo(host, { client: targetClient, proxyClient }, { force: true });
               resolve({ client: targetClient, proxyClient, target });
             });
@@ -917,6 +952,7 @@ function createHostService({ hostRepository }) {
     connectToHost,
     ensureDefaultPreference,
     findHost,
+    getActiveConnectionTarget,
     findStoredHost,
     getHostPlatformText,
     getLocalHost,

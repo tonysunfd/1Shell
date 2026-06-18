@@ -63,6 +63,13 @@ export interface ProbeEntry {
   relayName?: string;
   sshSkipped?: boolean;
   sshSkipReason?: string;
+  activeConnectionTarget?: {
+    kind?: 'direct' | 'public' | 'tailscale';
+    label?: string;
+    host?: string;
+    port?: number;
+    connectedAt?: string | null;
+  } | null;
 
   // 月度流量（B2）
   trafficUsedBytes?: number;
@@ -263,6 +270,13 @@ export function buildTickIndexes(length: number, tickCount = 4): number[] {
 export function getProbeStatusText(probe: ProbeEntry): string {
   if (probe.online) return '在线';
   return probe.stale ? '离线（沿用旧指标）' : '离线';
+}
+
+export function formatConnectionTarget(probe: ProbeEntry): string {
+  const target = probe.activeConnectionTarget;
+  if (!target?.host) return '--';
+  const label = target.label || (target.kind === 'tailscale' ? 'Tailscale' : target.kind === 'public' ? '公网' : '主地址');
+  return `${label} · ${target.host}:${target.port || 22}`;
 }
 
 export function getErrorCodeText(errorCode: string | undefined): string {

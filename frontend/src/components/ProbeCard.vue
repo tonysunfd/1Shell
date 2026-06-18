@@ -9,6 +9,7 @@ import {
   METRIC_LABELS,
   TIME_WINDOW_LABELS,
   formatBandwidth,
+  formatConnectionTarget,
   formatBytes,
   formatLatency,
   formatPercent,
@@ -94,6 +95,7 @@ const trafficLimitText = computed(() => {
       <div>
         <div class="probe-name">{{ displayName }}</div>
         <div class="probe-meta">{{ probe.hostname || '--' }}</div>
+        <div class="probe-meta">{{ formatConnectionTarget(probe) }}</div>
       </div>
       <div class="text-right">
         <div class="status-dot inline-block" :class="probe.online ? 'online' : 'offline'"></div>

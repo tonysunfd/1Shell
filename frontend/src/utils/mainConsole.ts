@@ -10,6 +10,14 @@ export interface HostLink {
   description?: string;
 }
 
+export interface ActiveConnectionTarget {
+  kind: 'direct' | 'public' | 'tailscale';
+  label: string;
+  host: string;
+  port: number;
+  connectedAt?: string | null;
+}
+
 export interface OsInfo {
   os?: string | null;
   distroId?: string | null;
@@ -49,6 +57,7 @@ export interface MainHost {
   connectionPreference?: ConnectionPreference;
   autoFailoverEnabled?: boolean;
   latencyFailoverThresholdMs?: number;
+  activeConnectionTarget?: ActiveConnectionTarget | null;
   username: string;
   type?: HostType;
   authType?: HostAuthType;

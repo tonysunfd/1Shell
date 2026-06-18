@@ -715,13 +715,17 @@ function createProbeService({ hostRepository, hostService, sshShellPool, probeAg
   function buildSnapshot(probes, relayProbes = []) {
     const decorated = probeAgentService ? probeAgentService.decorateProbes(probes) : probes;
     const merged = mergeRelayProbes(decorated, relayProbes);
+    const withConnectionTarget = merged.map((probe) => {
+      const activeConnectionTarget = hostService?.getActiveConnectionTarget?.(probe.hostId);
+      return activeConnectionTarget ? { ...probe, activeConnectionTarget } : probe;
+    });
     const trafficMap = probeTrafficService?.getUsageMap?.() || null;
     const withTraffic = trafficMap
-      ? merged.map((probe) => {
+      ? withConnectionTarget.map((probe) => {
           const usage = trafficMap.get(probe.hostId);
           return usage ? { ...probe, ...usage } : probe;
         })
-      : merged;
+      : withConnectionTarget;
     latestSnapshot = {
       generatedAt: nowIso(),
       probes: withTraffic,
