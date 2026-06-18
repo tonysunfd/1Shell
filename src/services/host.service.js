@@ -850,6 +850,7 @@ function createHostService({ hostRepository }) {
       return {
         status: 'unknown',
         mode: 'none',
+        latency: null,
         cpu: null,
         cpuIowait: null,
         cpuSteal: null,
@@ -867,6 +868,7 @@ function createHostService({ hostRepository }) {
     return {
       status: probe.online === true ? 'online' : 'offline',
       mode: detectProbeMode(probe),
+      latency: probe.latencyMs ?? null,
       cpu: probe.cpuUsage ?? null,
       cpuIowait: probe.cpuIowait ?? null,
       cpuSteal: probe.cpuSteal ?? null,

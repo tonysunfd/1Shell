@@ -1,5 +1,6 @@
 import { useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
+import { useNotifyStore } from '@/stores/notify';
 
 export interface RequestOptions extends Omit<RequestInit, 'headers'> {
   headers?: Record<string, string>;
@@ -24,6 +25,7 @@ function getCsrfToken(): string {
 export function useApiClient() {
   const router = useRouter();
   const auth = useAuthStore();
+  const notify = useNotifyStore();
 
   async function requestJson<T = unknown>(url: string, options: RequestOptions = {}): Promise<T> {
     const method = (options.method || 'GET').toUpperCase();
@@ -46,6 +48,7 @@ export function useApiClient() {
         || '请求失败';
       if (response.status === 401) {
         auth.logout();
+        notify.warn('登录已失效，请重新登录');
         router.push('/');
       }
       throw new ApiError(message, response.status, data);
