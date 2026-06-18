@@ -27,6 +27,7 @@ function createNotFoundError(message) {
 
 const LOCAL_HOST_CONFIG_FILE = path.join(ROOT_DIR, 'data', 'local-host-config.json');
 const HOST_ROLES = new Set(['primary', 'project', 'probe', 'proxy', 'relay', 'test', 'archive']);
+const CONNECTION_PREFERENCES = new Set(['direct', 'preferPublic', 'preferTailscale']);
 
 function loadLocalHostConfig() {
   try {
@@ -91,6 +92,11 @@ function createHostService({ hostRepository }) {
       name: host.name,
       host: host.host,
       port: host.port,
+      publicHost: host.publicHost || null,
+      publicPort: host.publicPort || null,
+      tailscaleHost: host.tailscaleHost || null,
+      tailscalePort: host.tailscalePort || null,
+      connectionPreference: CONNECTION_PREFERENCES.has(host.connectionPreference) ? host.connectionPreference : 'direct',
       username: host.username,
       authType: host.authType,
       proxyHostId: host.proxyHostId || null,
@@ -341,6 +347,21 @@ function createHostService({ hostRepository }) {
       name: String(payload.name || existing?.name || '').trim(),
       host: String(payload.host || existing?.host || '').trim(),
       port: normalizePort(payload.port ?? existing?.port, 22),
+      publicHost: hasOwn(payload, 'publicHost')
+        ? (String(payload.publicHost || '').trim() || null)
+        : (existing?.publicHost || null),
+      publicPort: hasOwn(payload, 'publicPort')
+        ? (payload.publicPort == null ? null : normalizePort(payload.publicPort, 22))
+        : (existing?.publicPort ?? null),
+      tailscaleHost: hasOwn(payload, 'tailscaleHost')
+        ? (String(payload.tailscaleHost || '').trim() || null)
+        : (existing?.tailscaleHost || null),
+      tailscalePort: hasOwn(payload, 'tailscalePort')
+        ? (payload.tailscalePort == null ? null : normalizePort(payload.tailscalePort, 22))
+        : (existing?.tailscalePort ?? null),
+      connectionPreference: CONNECTION_PREFERENCES.has(payload.connectionPreference)
+        ? payload.connectionPreference
+        : (CONNECTION_PREFERENCES.has(existing?.connectionPreference) ? existing.connectionPreference : 'direct'),
       username: String(payload.username || existing?.username || '').trim(),
       authType,
       proxyHostId: hasOwn(payload, 'proxyHostId')
@@ -424,6 +445,63 @@ function createHostService({ hostRepository }) {
     return config;
   }
 
+  function listHostConnectionTargets(host) {
+    const direct = {
+      kind: 'direct',
+      label: '主地址',
+      host: String(host.host || '').trim(),
+      port: normalizePort(host.port, 22),
+    };
+    const publicTarget = host.publicHost
+      ? {
+          kind: 'public',
+          label: '公网地址',
+          host: String(host.publicHost || '').trim(),
+          port: normalizePort(host.publicPort ?? host.port, 22),
+        }
+      : null;
+    const tailscaleTarget = host.tailscaleHost
+      ? {
+          kind: 'tailscale',
+          label: 'Tailscale 地址',
+          host: String(host.tailscaleHost || '').trim(),
+          port: normalizePort(host.tailscalePort ?? host.port, 22),
+        }
+      : null;
+
+    const preference = CONNECTION_PREFERENCES.has(host.connectionPreference) ? host.connectionPreference : 'direct';
+    const ordered = [];
+    if (preference === 'preferTailscale') {
+      if (tailscaleTarget) ordered.push(tailscaleTarget);
+      if (publicTarget) ordered.push(publicTarget);
+      ordered.push(direct);
+    } else if (preference === 'preferPublic') {
+      if (publicTarget) ordered.push(publicTarget);
+      if (tailscaleTarget) ordered.push(tailscaleTarget);
+      ordered.push(direct);
+    } else {
+      ordered.push(direct);
+      if (tailscaleTarget) ordered.push(tailscaleTarget);
+      if (publicTarget) ordered.push(publicTarget);
+    }
+
+    const seen = new Set();
+    return ordered.filter((target) => {
+      if (!target?.host) return false;
+      const key = `${target.host}:${target.port}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  function buildConnectionConfigForTarget(host, target) {
+    const config = buildConnectionConfig(host);
+    config.host = target.host;
+    config.port = normalizePort(target.port, 22);
+    return config;
+  }
+
   function connectToHost(hostId, options = {}) {
     const { Client } = require('ssh2');
     const { probeOs = true } = options;
@@ -433,23 +511,39 @@ function createHostService({ hostRepository }) {
       if (!host) return reject(new Error(`主机不存在: ${hostId}`));
       if (host.type !== 'ssh') return reject(new Error('仅支持 SSH 主机'));
 
-      const targetConfig = buildConnectionConfig(host);
-      if (options.readyTimeout) targetConfig.readyTimeout = options.readyTimeout;
+      const connectionTargets = listHostConnectionTargets(host);
+      const connectErrors = [];
 
       const proxyHostId = host.proxyHostId;
 
       if (!proxyHostId) {
-        const client = new Client();
-        client.on('ready', () => {
-          if (probeOs) maybeRefreshHostOsInfo(host, { client, proxyClient: null }, { force: true });
-          resolve({ client, proxyClient: null });
-        });
-        client.on('error', (err) => reject(new Error(`SSH 连接失败: ${err.message}`)));
-        try {
-          client.connect(targetConfig);
-        } catch (err) {
-          reject(new Error(`SSH 配置构建失败: ${err.message}`));
-        }
+        const tryDirect = (index = 0) => {
+          if (index >= connectionTargets.length) {
+            const detail = connectErrors.length ? ` (${connectErrors.join('；')})` : '';
+            reject(new Error(`SSH 连接失败${detail}`));
+            return;
+          }
+          const target = connectionTargets[index];
+          const targetConfig = buildConnectionConfigForTarget(host, target);
+          if (options.readyTimeout) targetConfig.readyTimeout = options.readyTimeout;
+          const client = new Client();
+          client.on('ready', () => {
+            if (probeOs) maybeRefreshHostOsInfo(host, { client, proxyClient: null }, { force: true });
+            resolve({ client, proxyClient: null, target });
+          });
+          client.on('error', (err) => {
+            connectErrors.push(`${target.label}:${err.message}`);
+            try { client.end(); } catch { /* ignore */ }
+            tryDirect(index + 1);
+          });
+          try {
+            client.connect(targetConfig);
+          } catch (err) {
+            connectErrors.push(`${target.label}:${err.message}`);
+            tryDirect(index + 1);
+          }
+        };
+        tryDirect(0);
         return;
       }
 
@@ -463,36 +557,49 @@ function createHostService({ hostRepository }) {
       const proxyClient = new Client();
 
       proxyClient.on('ready', () => {
-        const targetHost = targetConfig.host;
-        const targetPort = targetConfig.port || 22;
-
-        proxyClient.forwardOut('127.0.0.1', 0, targetHost, targetPort, (err, stream) => {
-          if (err) {
+        const tryViaProxy = (index = 0) => {
+          if (index >= connectionTargets.length) {
             proxyClient.end();
-            return reject(new Error(`跳板机 forwardOut 失败: ${err.message}`));
+            const detail = connectErrors.length ? ` (${connectErrors.join('；')})` : '';
+            reject(new Error(`目标主机连接失败（经跳板机）${detail}`));
+            return;
           }
+          const target = connectionTargets[index];
+          const targetConfig = buildConnectionConfigForTarget(host, target);
+          if (options.readyTimeout) targetConfig.readyTimeout = options.readyTimeout;
+          const targetHost = targetConfig.host;
+          const targetPort = targetConfig.port || 22;
 
-          const targetClient = new Client();
-          const targetConnConfig = { ...targetConfig, sock: stream };
-          delete targetConnConfig.host;
-          delete targetConnConfig.port;
+          proxyClient.forwardOut('127.0.0.1', 0, targetHost, targetPort, (err, stream) => {
+            if (err) {
+              connectErrors.push(`${target.label}:${err.message}`);
+              return tryViaProxy(index + 1);
+            }
 
-          targetClient.on('ready', () => {
-            if (probeOs) maybeRefreshHostOsInfo(host, { client: targetClient, proxyClient }, { force: true });
-            resolve({ client: targetClient, proxyClient });
+            const targetClient = new Client();
+            const targetConnConfig = { ...targetConfig, sock: stream };
+            delete targetConnConfig.host;
+            delete targetConnConfig.port;
+
+            targetClient.on('ready', () => {
+              if (probeOs) maybeRefreshHostOsInfo(host, { client: targetClient, proxyClient }, { force: true });
+              resolve({ client: targetClient, proxyClient, target });
+            });
+            targetClient.on('error', (err2) => {
+              connectErrors.push(`${target.label}:${err2.message}`);
+              try { targetClient.end(); } catch { /* ignore */ }
+              tryViaProxy(index + 1);
+            });
+
+            try {
+              targetClient.connect(targetConnConfig);
+            } catch (err3) {
+              connectErrors.push(`${target.label}:${err3.message}`);
+              tryViaProxy(index + 1);
+            }
           });
-          targetClient.on('error', (err2) => {
-            proxyClient.end();
-            reject(new Error(`目标主机连接失败（经跳板机）: ${err2.message}`));
-          });
-
-          try {
-            targetClient.connect(targetConnConfig);
-          } catch (err3) {
-            proxyClient.end();
-            reject(new Error(`目标主机配置构建失败: ${err3.message}`));
-          }
-        });
+        };
+        tryViaProxy(0);
       });
 
       proxyClient.on('error', (err) => reject(new Error(`跳板机连接失败: ${err.message}`)));
@@ -662,6 +769,11 @@ function createHostService({ hostRepository }) {
       name: host.name,
       type: host.type,
       host: host.host,
+      publicHost: host.publicHost || null,
+      publicPort: host.publicPort || null,
+      tailscaleHost: host.tailscaleHost || null,
+      tailscalePort: host.tailscalePort || null,
+      connectionPreference: CONNECTION_PREFERENCES.has(host.connectionPreference) ? host.connectionPreference : 'direct',
       user: host.username,
       username: host.username,
       port: host.port,

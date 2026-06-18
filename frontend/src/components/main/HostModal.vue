@@ -2,7 +2,7 @@
 // 主机编辑 modal — 老 [public/index.html#L701-L792](public/index.html#L701-L792) + [public/hosts.js#L36-L267](public/hosts.js#L36-L267) 1:1
 // 密码/私钥 authType 切换；编辑时密码/私钥/passphrase 留空 = 不修改；local host 只保存 name + links
 import { ref, computed, watch } from 'vue';
-import type { MainHost, HostLink, HostAuthType, HostFormPayload } from '@/utils/mainConsole';
+import type { MainHost, HostLink, HostAuthType, HostFormPayload, ConnectionPreference } from '@/utils/mainConsole';
 import { isLocalHost, LOCAL_HOST_ID } from '@/utils/mainConsole';
 
 interface Props {
@@ -20,6 +20,11 @@ const emit = defineEmits<{
 const name = ref('');
 const address = ref('');
 const port = ref(22);
+const publicHost = ref('');
+const publicPort = ref<number | null>(22);
+const tailscaleHost = ref('');
+const tailscalePort = ref<number | null>(22);
+const connectionPreference = ref<ConnectionPreference>('direct');
 const username = ref('');
 const password = ref('');
 const privateKey = ref('');
@@ -43,6 +48,11 @@ watch(() => [props.open, props.editing] as const, ([open, host]) => {
     name.value = host.name || '';
     address.value = host.host || '';
     port.value = host.port || 22;
+    publicHost.value = host.publicHost || '';
+    publicPort.value = host.publicPort ?? host.port ?? 22;
+    tailscaleHost.value = host.tailscaleHost || '';
+    tailscalePort.value = host.tailscalePort ?? host.port ?? 22;
+    connectionPreference.value = host.connectionPreference || 'direct';
     username.value = host.username || '';
     proxyHostId.value = host.proxyHostId || '';
     authType.value = host.authType === 'privateKey' ? 'privateKey' : 'password';
@@ -52,6 +62,11 @@ watch(() => [props.open, props.editing] as const, ([open, host]) => {
     name.value = '';
     address.value = '';
     port.value = 22;
+    publicHost.value = '';
+    publicPort.value = 22;
+    tailscaleHost.value = '';
+    tailscalePort.value = 22;
+    connectionPreference.value = 'direct';
     username.value = '';
     proxyHostId.value = '';
     authType.value = 'password';
@@ -93,6 +108,11 @@ function onSubmit(e: Event): void {
     name: name.value.trim(),
     host: address.value.trim(),
     port: Number(port.value) || 22,
+    publicHost: publicHost.value.trim() || null,
+    publicPort: publicHost.value.trim() ? (Number(publicPort.value) || Number(port.value) || 22) : null,
+    tailscaleHost: tailscaleHost.value.trim() || null,
+    tailscalePort: tailscaleHost.value.trim() ? (Number(tailscalePort.value) || Number(port.value) || 22) : null,
+    connectionPreference: connectionPreference.value,
     username: username.value.trim(),
     authType: authType.value,
     proxyHostId: proxyHostId.value || null,
@@ -184,6 +204,60 @@ defineExpose({ setError });
                   class="w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-[#1e293b] bg-slate-50 dark:bg-[#0b1324] dark:text-slate-200 text-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100"
                 />
               </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-semibold text-slate-500 dark:text-slate-400">Tailscale 地址</label>
+                <input
+                  v-model="tailscaleHost"
+                  type="text"
+                  placeholder="100.x.x.x 或 *.ts.net"
+                  class="w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-[#1e293b] bg-slate-50 dark:bg-[#0b1324] dark:text-slate-200 text-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100"
+                />
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-semibold text-slate-500 dark:text-slate-400">Tailscale 端口</label>
+                <input
+                  v-model.number="tailscalePort"
+                  type="number"
+                  min="1"
+                  max="65535"
+                  class="w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-[#1e293b] bg-slate-50 dark:bg-[#0b1324] dark:text-slate-200 text-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100"
+                />
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-semibold text-slate-500 dark:text-slate-400">公网地址</label>
+                <input
+                  v-model="publicHost"
+                  type="text"
+                  placeholder="公网域名或 IP"
+                  class="w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-[#1e293b] bg-slate-50 dark:bg-[#0b1324] dark:text-slate-200 text-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100"
+                />
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-semibold text-slate-500 dark:text-slate-400">公网端口</label>
+                <input
+                  v-model.number="publicPort"
+                  type="number"
+                  min="1"
+                  max="65535"
+                  class="w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-[#1e293b] bg-slate-50 dark:bg-[#0b1324] dark:text-slate-200 text-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100"
+                />
+              </div>
+            </div>
+
+            <div class="flex flex-col gap-1.5">
+              <label class="text-xs font-semibold text-slate-500 dark:text-slate-400">连接优先级</label>
+              <select
+                v-model="connectionPreference"
+                class="w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-[#1e293b] bg-slate-50 dark:bg-[#0b1324] dark:text-slate-200 text-sm outline-none cursor-pointer focus:border-blue-400"
+              >
+                <option value="direct">优先主地址</option>
+                <option value="preferTailscale">优先 Tailscale</option>
+                <option value="preferPublic">优先公网</option>
+              </select>
+              <div class="text-[11px] text-slate-400">当前优先地址连接失败时，1Shell 会自动回退到其他已配置地址。</div>
             </div>
 
             <div class="flex flex-col gap-1.5">

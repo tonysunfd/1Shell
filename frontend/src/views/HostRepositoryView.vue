@@ -61,6 +61,11 @@ interface RepositoryHost {
   name: string;
   type?: 'local' | 'ssh';
   host: string;
+  publicHost?: string | null;
+  publicPort?: number | null;
+  tailscaleHost?: string | null;
+  tailscalePort?: number | null;
+  connectionPreference?: 'direct' | 'preferPublic' | 'preferTailscale';
   user?: string;
   username: string;
   port: number | null;
@@ -279,6 +284,11 @@ function hostMeta(host: RepositoryHost): string {
     id: host.id,
     name: host.name,
     host: host.host,
+    publicHost: host.publicHost,
+    publicPort: host.publicPort ?? null,
+    tailscaleHost: host.tailscaleHost,
+    tailscalePort: host.tailscalePort ?? null,
+    connectionPreference: host.connectionPreference || 'direct',
     port: host.port || 22,
     username: host.username || host.user || 'root',
     type: host.type,

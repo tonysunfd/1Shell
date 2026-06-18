@@ -198,14 +198,41 @@ function validateHostLinks(value) {
   });
 }
 
+function validateOptionalHostField(value, fieldName) {
+  if (value == null || value === '') return null;
+  return ensureNonEmptyString(value, `${fieldName} 不能为空`);
+}
+
+function validateOptionalPortField(value, fieldName) {
+  if (value == null || value === '') return null;
+  return ensureIntegerInRange(value, { field: fieldName });
+}
+
 function validateHostPayload(payload, { isEditing = false } = {}) {
   const body = ensureObject(payload, '主机请求体必须是对象');
   const authType = ensureEnum(body.authType, ['password', 'privateKey'], '认证方式不合法');
+  const connectionPreference = hasOwn(body, 'connectionPreference')
+    ? ensureEnum(body.connectionPreference, ['direct', 'preferPublic', 'preferTailscale'], 'connectionPreference 不合法')
+    : 'direct';
 
   ensureNonEmptyString(body.name, '主机名称不能为空');
   ensureNonEmptyString(body.host, '主机地址不能为空');
   ensureIntegerInRange(body.port, { field: '主机端口' });
   ensureNonEmptyString(body.username, '用户名不能为空');
+  body.connectionPreference = connectionPreference;
+
+  if (hasOwn(body, 'publicHost')) {
+    body.publicHost = validateOptionalHostField(body.publicHost, 'publicHost');
+  }
+  if (hasOwn(body, 'publicPort')) {
+    body.publicPort = validateOptionalPortField(body.publicPort, 'publicPort');
+  }
+  if (hasOwn(body, 'tailscaleHost')) {
+    body.tailscaleHost = validateOptionalHostField(body.tailscaleHost, 'tailscaleHost');
+  }
+  if (hasOwn(body, 'tailscalePort')) {
+    body.tailscalePort = validateOptionalPortField(body.tailscalePort, 'tailscalePort');
+  }
 
   if (hasOwn(body, 'links')) {
     body.links = validateHostLinks(body.links);

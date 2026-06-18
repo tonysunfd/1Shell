@@ -24,6 +24,7 @@ export interface OsInfo {
 export type HostAuthType = 'password' | 'privateKey';
 export type HostType = 'local' | 'ssh';
 export type HostRole = 'primary' | 'project' | 'probe' | 'proxy' | 'relay' | 'test' | 'archive';
+export type ConnectionPreference = 'direct' | 'preferPublic' | 'preferTailscale';
 
 export interface HostPreference {
   hostId: string;
@@ -41,6 +42,11 @@ export interface MainHost {
   name: string;
   host: string;
   port: number;
+  publicHost?: string | null;
+  publicPort?: number | null;
+  tailscaleHost?: string | null;
+  tailscalePort?: number | null;
+  connectionPreference?: ConnectionPreference;
   username: string;
   type?: HostType;
   authType?: HostAuthType;
@@ -56,6 +62,11 @@ export interface HostFormPayload {
   name: string;
   host: string;
   port: number;
+  publicHost: string | null;
+  publicPort: number | null;
+  tailscaleHost: string | null;
+  tailscalePort: number | null;
+  connectionPreference: ConnectionPreference;
   username: string;
   authType: HostAuthType;
   proxyHostId: string | null;
@@ -136,7 +147,10 @@ export function formatOsInfo(osInfo: OsInfo | null | undefined, fallbackPlatform
 export function formatHostMeta(host: MainHost | null | undefined): string {
   if (!host) return '';
   if (host.type === 'local' || host.id === LOCAL_HOST_ID) return '部署节点 / 本地 Shell';
-  return `${host.username || 'root'}@${host.host}:${host.port || 22}`;
+  const parts = [`${host.username || 'root'}@${host.host}:${host.port || 22}`];
+  if (host.tailscaleHost) parts.push(`Tail: ${host.tailscaleHost}:${host.tailscalePort || host.port || 22}`);
+  if (host.publicHost) parts.push(`Pub: ${host.publicHost}:${host.publicPort || host.port || 22}`);
+  return parts.join(' · ');
 }
 
 export function isLocalHost(host: MainHost | null | undefined): boolean {
