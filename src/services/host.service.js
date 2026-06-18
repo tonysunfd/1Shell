@@ -47,6 +47,18 @@ function saveLocalHostConfig(config) {
 function createHostService({ hostRepository }) {
   const pendingOsProbeHosts = new Set();
   const activeConnectionTargetMap = new Map();
+  const targetLatencyMap = new Map();
+
+  function cloneConnectionTarget(target) {
+    if (!target) return null;
+    return {
+      kind: target.kind,
+      label: target.label,
+      host: target.host,
+      port: normalizePort(target.port, 22),
+      connectedAt: target.connectedAt || null,
+    };
+  }
 
   function normalizeHostLinks(links) {
     if (!Array.isArray(links)) return [];
@@ -89,6 +101,7 @@ function createHostService({ hostRepository }) {
     }
 
     const activeTarget = activeConnectionTargetMap.get(host.id) || null;
+    const latencyState = targetLatencyMap.get(host.id) || null;
     return {
       id: host.id,
       type: 'ssh',
@@ -110,6 +123,14 @@ function createHostService({ hostRepository }) {
         host: activeTarget.host,
         port: activeTarget.port,
         connectedAt: activeTarget.connectedAt || null,
+      } : null,
+      latencyMs: Number.isFinite(Number(latencyState?.direct?.latencyMs)) ? Number(latencyState.direct.latencyMs) : null,
+      publicLatencyMs: Number.isFinite(Number(latencyState?.public?.latencyMs)) ? Number(latencyState.public.latencyMs) : null,
+      tailscaleLatencyMs: Number.isFinite(Number(latencyState?.tailscale?.latencyMs)) ? Number(latencyState.tailscale.latencyMs) : null,
+      connectionLatencies: latencyState ? {
+        direct: latencyState.direct ? { ...latencyState.direct } : null,
+        public: latencyState.public ? { ...latencyState.public } : null,
+        tailscale: latencyState.tailscale ? { ...latencyState.tailscale } : null,
       } : null,
       username: host.username,
       authType: host.authType,
@@ -353,14 +374,17 @@ function createHostService({ hostRepository }) {
 
   function getActiveConnectionTarget(hostId) {
     if (!hostId || hostId === LOCAL_HOST_ID) return null;
-    const activeTarget = activeConnectionTargetMap.get(hostId);
-    if (!activeTarget) return null;
+    return cloneConnectionTarget(activeConnectionTargetMap.get(hostId));
+  }
+
+  function getTargetLatencyState(hostId) {
+    if (!hostId || hostId === LOCAL_HOST_ID) return null;
+    const latencyState = targetLatencyMap.get(hostId);
+    if (!latencyState) return null;
     return {
-      kind: activeTarget.kind,
-      label: activeTarget.label,
-      host: activeTarget.host,
-      port: activeTarget.port,
-      connectedAt: activeTarget.connectedAt || null,
+      direct: latencyState.direct ? { ...latencyState.direct } : null,
+      public: latencyState.public ? { ...latencyState.public } : null,
+      tailscale: latencyState.tailscale ? { ...latencyState.tailscale } : null,
     };
   }
 
@@ -575,6 +599,23 @@ function createHostService({ hostRepository }) {
     });
   }
 
+  function recordTargetLatency(hostId, target, latencyMs, meta = {}) {
+    if (!hostId || !target) return;
+    if (!Number.isFinite(Number(latencyMs)) || Number(latencyMs) <= 0) return;
+    const bucketKey = target.kind === 'tailscale' ? 'tailscale' : target.kind === 'public' ? 'public' : 'direct';
+    const current = targetLatencyMap.get(hostId) || {};
+    current[bucketKey] = {
+      kind: target.kind,
+      label: target.label,
+      host: target.host,
+      port: normalizePort(target.port, 22),
+      latencyMs: Math.round(Number(latencyMs)),
+      source: meta.source || 'ssh',
+      measuredAt: meta.measuredAt || nowIso(),
+    };
+    targetLatencyMap.set(hostId, current);
+  }
+
   function connectToHost(hostId, options = {}) {
     const { Client } = require('ssh2');
     const { probeOs = true } = options;
@@ -600,8 +641,10 @@ function createHostService({ hostRepository }) {
           const targetConfig = buildConnectionConfigForTarget(host, target);
           if (options.readyTimeout) targetConfig.readyTimeout = options.readyTimeout;
           const client = new Client();
+          const connectStartedAt = Date.now();
           client.on('ready', () => {
             rememberActiveConnectionTarget(host.id, target);
+            recordTargetLatency(host.id, target, Date.now() - connectStartedAt, { source: 'ssh_connect' });
             if (probeOs) maybeRefreshHostOsInfo(host, { client, proxyClient: null }, { force: true });
             resolve({ client, proxyClient: null, target });
           });
@@ -643,6 +686,7 @@ function createHostService({ hostRepository }) {
           if (options.readyTimeout) targetConfig.readyTimeout = options.readyTimeout;
           const targetHost = targetConfig.host;
           const targetPort = targetConfig.port || 22;
+          const connectStartedAt = Date.now();
 
           proxyClient.forwardOut('127.0.0.1', 0, targetHost, targetPort, (err, stream) => {
             if (err) {
@@ -657,6 +701,7 @@ function createHostService({ hostRepository }) {
 
             targetClient.on('ready', () => {
               rememberActiveConnectionTarget(host.id, target);
+              recordTargetLatency(host.id, target, Date.now() - connectStartedAt, { source: 'ssh_connect' });
               if (probeOs) maybeRefreshHostOsInfo(host, { client: targetClient, proxyClient }, { force: true });
               resolve({ client: targetClient, proxyClient, target });
             });
@@ -839,6 +884,8 @@ function createHostService({ hostRepository }) {
 
   function toRepositoryItem(host, { probeMap, alertCountMap } = {}) {
     const probe = probeMap?.get(host.id) || null;
+    const activeConnectionTarget = getActiveConnectionTarget(host.id);
+    const connectionLatencies = getTargetLatencyState(host.id);
     return {
       id: host.id,
       name: host.name,
@@ -861,6 +908,11 @@ function createHostService({ hostRepository }) {
       links: host.links || [],
       manualLocation: host.manualLocation || null,
       osInfo: normalizeOsInfo(host.osInfo),
+      activeConnectionTarget,
+      latencyMs: Number.isFinite(Number(connectionLatencies?.direct?.latencyMs)) ? Number(connectionLatencies.direct.latencyMs) : null,
+      publicLatencyMs: Number.isFinite(Number(connectionLatencies?.public?.latencyMs)) ? Number(connectionLatencies.public.latencyMs) : null,
+      tailscaleLatencyMs: Number.isFinite(Number(connectionLatencies?.tailscale?.latencyMs)) ? Number(connectionLatencies.tailscale.latencyMs) : null,
+      connectionLatencies,
       preference: host.preference,
       probe: toProbeSummary(probe, alertCountMap?.get(host.id) || 0),
     };
@@ -953,6 +1005,7 @@ function createHostService({ hostRepository }) {
     ensureDefaultPreference,
     findHost,
     getActiveConnectionTarget,
+    getTargetLatencyState,
     findStoredHost,
     getHostPlatformText,
     getLocalHost,
@@ -963,6 +1016,7 @@ function createHostService({ hostRepository }) {
     saveLocalHostConfig,
     setConsoleOrder,
     toPublicHost,
+    recordTargetLatency,
     updateHostPreference,
     updateLocalHostManualLocation,
   };

@@ -18,6 +18,16 @@ export interface ActiveConnectionTarget {
   connectedAt?: string | null;
 }
 
+export interface ConnectionLatencyState {
+  kind: 'direct' | 'public' | 'tailscale';
+  label: string;
+  host: string;
+  port: number;
+  latencyMs: number;
+  source?: string | null;
+  measuredAt?: string | null;
+}
+
 export interface OsInfo {
   os?: string | null;
   distroId?: string | null;
@@ -58,6 +68,14 @@ export interface MainHost {
   autoFailoverEnabled?: boolean;
   latencyFailoverThresholdMs?: number;
   activeConnectionTarget?: ActiveConnectionTarget | null;
+  latencyMs?: number | null;
+  publicLatencyMs?: number | null;
+  tailscaleLatencyMs?: number | null;
+  connectionLatencies?: {
+    direct?: ConnectionLatencyState | null;
+    public?: ConnectionLatencyState | null;
+    tailscale?: ConnectionLatencyState | null;
+  } | null;
   username: string;
   type?: HostType;
   authType?: HostAuthType;

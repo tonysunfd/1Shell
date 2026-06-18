@@ -159,7 +159,7 @@ function createSshShellPool({ hostService }) {
   // ─── 建立持久 shell ─────────────────────────────────────────────────────
 
   async function createShellEntry(hostId) {
-    const { client, proxyClient } = await hostService.connectToHost(hostId, {
+    const { client, proxyClient, target } = await hostService.connectToHost(hostId, {
       readyTimeout: CONNECT_TIMEOUT_MS,
     });
 
@@ -178,6 +178,7 @@ function createSshShellPool({ hostService }) {
     const entry = {
       client,
       proxyClient,
+      target: target || null,
       shell,
       idleTimer: null,
       busy: false,
@@ -284,7 +285,7 @@ function createSshShellPool({ hostService }) {
         endMarker,
         resolve: (result) => {
           signal?.removeEventListener?.('abort', onAbort);
-          resolve({ ...result, durationMs: Date.now() - startAt });
+          resolve({ ...result, durationMs: Date.now() - startAt, target: entry.target || null });
         },
         reject: (err) => {
           signal?.removeEventListener?.('abort', onAbort);

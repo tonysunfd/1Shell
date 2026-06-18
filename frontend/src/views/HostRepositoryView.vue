@@ -6,7 +6,7 @@ import { useNotifyStore } from '@/stores/notify';
 import AppIcon from '@/components/AppIcon.vue';
 import FileBrowserPanel from '@/components/main/FileBrowserPanel.vue';
 import ProbeTrendChart from '@/components/ProbeTrendChart.vue';
-import type { HostPreference, HostRole, OsInfo } from '@/utils/mainConsole';
+import type { ActiveConnectionTarget, ConnectionLatencyState, HostPreference, HostRole, OsInfo } from '@/utils/mainConsole';
 import { LOCAL_HOST_ID, formatHostMeta, formatOsInfo } from '@/utils/mainConsole';
 import { formatBandwidth, type ProbeSample } from '@/utils/probe';
 
@@ -42,6 +42,7 @@ interface ProbeSystemHealth {
 interface ProbeSummary {
   status: 'online' | 'offline' | 'unknown';
   mode: 'agentless' | 'agent' | 'relay' | 'none';
+  latency?: number | null;
   cpu?: number | null;
   cpuIowait?: number | null;
   cpuSteal?: number | null;
@@ -68,6 +69,15 @@ interface RepositoryHost {
   connectionPreference?: 'direct' | 'preferPublic' | 'preferTailscale';
   autoFailoverEnabled?: boolean;
   latencyFailoverThresholdMs?: number | null;
+  activeConnectionTarget?: ActiveConnectionTarget | null;
+  latencyMs?: number | null;
+  publicLatencyMs?: number | null;
+  tailscaleLatencyMs?: number | null;
+  connectionLatencies?: {
+    direct?: ConnectionLatencyState | null;
+    public?: ConnectionLatencyState | null;
+    tailscale?: ConnectionLatencyState | null;
+  } | null;
   user?: string;
   username: string;
   port: number | null;
@@ -299,6 +309,22 @@ function hostMeta(host: RepositoryHost): string {
 
 function platformText(host: RepositoryHost): string {
   return formatOsInfo(host.osInfo, host.probe?.platform);
+}
+
+function formatLatency(value: number | null | undefined): string {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return '--';
+  return `${Math.round(Number(value))} ms`;
+}
+
+function formatConnectionTarget(target: ActiveConnectionTarget | null | undefined): string {
+  if (!target?.host) return '--';
+  return `${target.label || '当前链路'} · ${target.host}:${target.port || 22}`;
+}
+
+function connectionStrategyText(host: RepositoryHost): string {
+  if (host.connectionPreference === 'preferTailscale') return '优先 Tailscale';
+  if (host.connectionPreference === 'preferPublic') return '优先公网';
+  return '优先主地址';
 }
 
 async function loadHosts(): Promise<void> {
@@ -920,6 +946,47 @@ onMounted(() => { void loadHosts(); });
                   <p class="text-sm font-semibold">诊断入口</p>
                   <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Ping / DNS / HTTP 诊断沿用探针页能力。</p>
                   <button type="button" class="mt-3 rounded-xl bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500" @click="openProbe(selectedHost)">打开探针页</button>
+                </div>
+              </div>
+
+              <div class="rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p class="text-sm font-semibold">连接链路</p>
+                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">展示当前活跃地址，以及主地址 / 公网 / Tailscale 的最近连接延时。</p>
+                  </div>
+                  <div class="text-right text-xs text-slate-500 dark:text-slate-400">
+                    <p>{{ connectionStrategyText(selectedHost) }}</p>
+                    <p v-if="selectedHost.autoFailoverEnabled">高延时切换阈值 {{ formatLatency(selectedHost.latencyFailoverThresholdMs) }}</p>
+                    <p v-else>未启用高延时自动切换</p>
+                  </div>
+                </div>
+                <div class="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-4">
+                  <div class="rounded-xl bg-slate-50 p-3 dark:bg-white/[0.04] xl:col-span-4">
+                    <p class="text-[11px] text-slate-500">当前活跃链路</p>
+                    <p class="mt-1 text-sm font-semibold">{{ formatConnectionTarget(selectedHost.activeConnectionTarget) }}</p>
+                    <p class="mt-1 text-[11px] text-slate-400">最近连接 {{ formatTime(selectedHost.activeConnectionTarget?.connectedAt) }}</p>
+                  </div>
+                  <div class="rounded-xl bg-slate-50 p-3 dark:bg-white/[0.04]">
+                    <p class="text-[11px] text-slate-500">主地址</p>
+                    <p class="mt-1 text-lg font-semibold">{{ formatLatency(selectedHost.latencyMs) }}</p>
+                    <p class="mt-1 text-[11px] text-slate-400 break-all">{{ selectedHost.host }}:{{ selectedHost.port || 22 }}</p>
+                  </div>
+                  <div class="rounded-xl bg-slate-50 p-3 dark:bg-white/[0.04]">
+                    <p class="text-[11px] text-slate-500">公网地址</p>
+                    <p class="mt-1 text-lg font-semibold">{{ formatLatency(selectedHost.publicLatencyMs) }}</p>
+                    <p class="mt-1 text-[11px] text-slate-400 break-all">{{ selectedHost.publicHost ? `${selectedHost.publicHost}:${selectedHost.publicPort || selectedHost.port || 22}` : '--' }}</p>
+                  </div>
+                  <div class="rounded-xl bg-slate-50 p-3 dark:bg-white/[0.04]">
+                    <p class="text-[11px] text-slate-500">Tailscale</p>
+                    <p class="mt-1 text-lg font-semibold">{{ formatLatency(selectedHost.tailscaleLatencyMs) }}</p>
+                    <p class="mt-1 text-[11px] text-slate-400 break-all">{{ selectedHost.tailscaleHost ? `${selectedHost.tailscaleHost}:${selectedHost.tailscalePort || selectedHost.port || 22}` : '--' }}</p>
+                  </div>
+                  <div class="rounded-xl bg-slate-50 p-3 dark:bg-white/[0.04]">
+                    <p class="text-[11px] text-slate-500">最近探针延时</p>
+                    <p class="mt-1 text-lg font-semibold">{{ formatLatency(selectedHost.probe?.latency as number | null | undefined) }}</p>
+                    <p class="mt-1 text-[11px] text-slate-400">仅表示最近一次探针往返耗时</p>
+                  </div>
                 </div>
               </div>
 

@@ -130,6 +130,14 @@ function createProbeService({ hostRepository, hostService, sshShellPool, probeAg
     };
   }
 
+  function rememberProbeTargetLatency(hostId, target, latencyMs, source = 'probe') {
+    if (!hostId || !target) return;
+    hostService?.recordTargetLatency?.(hostId, target, latencyMs, {
+      source,
+      measuredAt: nowIso(),
+    });
+  }
+
   function buildTransferRates(previous, currentCheckedAtMs, currentProbe) {
     if (!previous) {
       return {
@@ -446,6 +454,7 @@ function createProbeService({ hostRepository, hostService, sshShellPool, probeAg
       const result = await sshShellPool.exec(host.id, REMOTE_PROBE_COMMAND, timeout);
       const latencyMs = Date.now() - startedAt;
       const stdout = result.stdout || '';
+      rememberProbeTargetLatency(host.id, result.target, latencyMs, 'probe_shell_pool');
 
       if (result.exitCode !== 0 && !stdout.trim()) {
         return {
@@ -491,6 +500,7 @@ function createProbeService({ hostRepository, hostService, sshShellPool, probeAg
       let latencyMs = null;
       let targetClient = null;
       let proxyClient = null;
+      let activeTarget = null;
       const timeout = getAdaptiveTimeout(host.id);
 
       const finish = (payload) => {
@@ -502,6 +512,7 @@ function createProbeService({ hostRepository, hostService, sshShellPool, probeAg
         // 记录成功延迟用于自适应超时
         if (payload.online && payload.latencyMs > 0) {
           recordLatency(host.id, payload.latencyMs);
+          rememberProbeTargetLatency(host.id, payload.target || activeTarget, payload.latencyMs, 'probe_connect');
         }
         resolve({
           hostId: host.id,
@@ -522,9 +533,10 @@ function createProbeService({ hostRepository, hostService, sshShellPool, probeAg
       }, timeout);
 
       hostService.connectToHost(host.id, { readyTimeout: timeout })
-        .then(({ client, proxyClient: proxy }) => {
+        .then(({ client, proxyClient: proxy, target }) => {
           targetClient = client;
           proxyClient = proxy;
+          activeTarget = target || null;
           latencyMs = Date.now() - startedAt;
 
           client.exec(REMOTE_PROBE_COMMAND, (err, stream) => {
