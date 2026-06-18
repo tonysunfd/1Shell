@@ -28,6 +28,7 @@ function createNotFoundError(message) {
 const LOCAL_HOST_CONFIG_FILE = path.join(ROOT_DIR, 'data', 'local-host-config.json');
 const HOST_ROLES = new Set(['primary', 'project', 'probe', 'proxy', 'relay', 'test', 'archive']);
 const CONNECTION_PREFERENCES = new Set(['direct', 'preferPublic', 'preferTailscale']);
+const DEFAULT_LATENCY_FAILOVER_THRESHOLD_MS = 600;
 
 function loadLocalHostConfig() {
   try {
@@ -97,6 +98,10 @@ function createHostService({ hostRepository }) {
       tailscaleHost: host.tailscaleHost || null,
       tailscalePort: host.tailscalePort || null,
       connectionPreference: CONNECTION_PREFERENCES.has(host.connectionPreference) ? host.connectionPreference : 'direct',
+      autoFailoverEnabled: Boolean(host.autoFailoverEnabled),
+      latencyFailoverThresholdMs: Number.isFinite(Number(host.latencyFailoverThresholdMs))
+        ? Number(host.latencyFailoverThresholdMs)
+        : DEFAULT_LATENCY_FAILOVER_THRESHOLD_MS,
       username: host.username,
       authType: host.authType,
       proxyHostId: host.proxyHostId || null,
@@ -362,6 +367,16 @@ function createHostService({ hostRepository }) {
       connectionPreference: CONNECTION_PREFERENCES.has(payload.connectionPreference)
         ? payload.connectionPreference
         : (CONNECTION_PREFERENCES.has(existing?.connectionPreference) ? existing.connectionPreference : 'direct'),
+      autoFailoverEnabled: hasOwn(payload, 'autoFailoverEnabled')
+        ? Boolean(payload.autoFailoverEnabled)
+        : Boolean(existing?.autoFailoverEnabled),
+      latencyFailoverThresholdMs: hasOwn(payload, 'latencyFailoverThresholdMs')
+        ? (Number.isFinite(Number(payload.latencyFailoverThresholdMs))
+          ? Number(payload.latencyFailoverThresholdMs)
+          : DEFAULT_LATENCY_FAILOVER_THRESHOLD_MS)
+        : (Number.isFinite(Number(existing?.latencyFailoverThresholdMs))
+          ? Number(existing.latencyFailoverThresholdMs)
+          : DEFAULT_LATENCY_FAILOVER_THRESHOLD_MS),
       username: String(payload.username || existing?.username || '').trim(),
       authType,
       proxyHostId: hasOwn(payload, 'proxyHostId')
@@ -486,13 +501,38 @@ function createHostService({ hostRepository }) {
     }
 
     const seen = new Set();
-    return ordered.filter((target) => {
+    const deduped = ordered.filter((target) => {
       if (!target?.host) return false;
       const key = `${target.host}:${target.port}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
     });
+
+    if (!host.autoFailoverEnabled) return deduped;
+
+    const threshold = Number.isFinite(Number(host.latencyFailoverThresholdMs))
+      ? Number(host.latencyFailoverThresholdMs)
+      : DEFAULT_LATENCY_FAILOVER_THRESHOLD_MS;
+    const primary = deduped[0];
+    const secondary = deduped[1];
+    if (!primary || !secondary) return deduped;
+
+    const primaryLatency = resolveTargetLatencyMs(host, primary);
+    const secondaryLatency = resolveTargetLatencyMs(host, secondary);
+    if (Number.isFinite(primaryLatency) && primaryLatency > threshold) {
+      if (!Number.isFinite(secondaryLatency) || secondaryLatency <= primaryLatency) {
+        return [secondary, primary, ...deduped.slice(2)];
+      }
+    }
+    return deduped;
+  }
+
+  function resolveTargetLatencyMs(host, target) {
+    if (!host || !target) return null;
+    if (target.kind === 'tailscale') return Number.isFinite(Number(host.tailscaleLatencyMs)) ? Number(host.tailscaleLatencyMs) : null;
+    if (target.kind === 'public') return Number.isFinite(Number(host.publicLatencyMs)) ? Number(host.publicLatencyMs) : null;
+    return Number.isFinite(Number(host.latencyMs)) ? Number(host.latencyMs) : null;
   }
 
   function buildConnectionConfigForTarget(host, target) {
@@ -774,6 +814,10 @@ function createHostService({ hostRepository }) {
       tailscaleHost: host.tailscaleHost || null,
       tailscalePort: host.tailscalePort || null,
       connectionPreference: CONNECTION_PREFERENCES.has(host.connectionPreference) ? host.connectionPreference : 'direct',
+      autoFailoverEnabled: Boolean(host.autoFailoverEnabled),
+      latencyFailoverThresholdMs: Number.isFinite(Number(host.latencyFailoverThresholdMs))
+        ? Number(host.latencyFailoverThresholdMs)
+        : DEFAULT_LATENCY_FAILOVER_THRESHOLD_MS,
       user: host.username,
       username: host.username,
       port: host.port,

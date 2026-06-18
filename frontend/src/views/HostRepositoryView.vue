@@ -66,6 +66,8 @@ interface RepositoryHost {
   tailscaleHost?: string | null;
   tailscalePort?: number | null;
   connectionPreference?: 'direct' | 'preferPublic' | 'preferTailscale';
+  autoFailoverEnabled?: boolean;
+  latencyFailoverThresholdMs?: number | null;
   user?: string;
   username: string;
   port: number | null;

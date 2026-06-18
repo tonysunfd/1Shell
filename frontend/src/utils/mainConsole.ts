@@ -47,6 +47,8 @@ export interface MainHost {
   tailscaleHost?: string | null;
   tailscalePort?: number | null;
   connectionPreference?: ConnectionPreference;
+  autoFailoverEnabled?: boolean;
+  latencyFailoverThresholdMs?: number;
   username: string;
   type?: HostType;
   authType?: HostAuthType;
@@ -67,6 +69,8 @@ export interface HostFormPayload {
   tailscaleHost: string | null;
   tailscalePort: number | null;
   connectionPreference: ConnectionPreference;
+  autoFailoverEnabled: boolean;
+  latencyFailoverThresholdMs: number | null;
   username: string;
   authType: HostAuthType;
   proxyHostId: string | null;

@@ -25,6 +25,8 @@ const publicPort = ref<number | null>(22);
 const tailscaleHost = ref('');
 const tailscalePort = ref<number | null>(22);
 const connectionPreference = ref<ConnectionPreference>('direct');
+const autoFailoverEnabled = ref(false);
+const latencyFailoverThresholdMs = ref<number | null>(600);
 const username = ref('');
 const password = ref('');
 const privateKey = ref('');
@@ -53,6 +55,8 @@ watch(() => [props.open, props.editing] as const, ([open, host]) => {
     tailscaleHost.value = host.tailscaleHost || '';
     tailscalePort.value = host.tailscalePort ?? host.port ?? 22;
     connectionPreference.value = host.connectionPreference || 'direct';
+    autoFailoverEnabled.value = Boolean(host.autoFailoverEnabled);
+    latencyFailoverThresholdMs.value = host.latencyFailoverThresholdMs ?? 600;
     username.value = host.username || '';
     proxyHostId.value = host.proxyHostId || '';
     authType.value = host.authType === 'privateKey' ? 'privateKey' : 'password';
@@ -67,6 +71,8 @@ watch(() => [props.open, props.editing] as const, ([open, host]) => {
     tailscaleHost.value = '';
     tailscalePort.value = 22;
     connectionPreference.value = 'direct';
+    autoFailoverEnabled.value = false;
+    latencyFailoverThresholdMs.value = 600;
     username.value = '';
     proxyHostId.value = '';
     authType.value = 'password';
@@ -113,6 +119,8 @@ function onSubmit(e: Event): void {
     tailscaleHost: tailscaleHost.value.trim() || null,
     tailscalePort: tailscaleHost.value.trim() ? (Number(tailscalePort.value) || Number(port.value) || 22) : null,
     connectionPreference: connectionPreference.value,
+    autoFailoverEnabled: autoFailoverEnabled.value,
+    latencyFailoverThresholdMs: autoFailoverEnabled.value ? (Number(latencyFailoverThresholdMs.value) || 600) : null,
     username: username.value.trim(),
     authType: authType.value,
     proxyHostId: proxyHostId.value || null,
@@ -258,6 +266,24 @@ defineExpose({ setError });
                 <option value="preferPublic">优先公网</option>
               </select>
               <div class="text-[11px] text-slate-400">当前优先地址连接失败时，1Shell 会自动回退到其他已配置地址。</div>
+            </div>
+
+            <div class="rounded-lg border border-slate-200 dark:border-[#1e293b] p-3 flex flex-col gap-3">
+              <label class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                <input v-model="autoFailoverEnabled" type="checkbox" class="rounded border-slate-300 text-blue-500 focus:ring-blue-400" />
+                <span>启用高延时自动切换</span>
+              </label>
+              <div v-if="autoFailoverEnabled" class="flex flex-col gap-1.5">
+                <label class="text-xs font-semibold text-slate-500 dark:text-slate-400">延时切换阈值 (ms)</label>
+                <input
+                  v-model.number="latencyFailoverThresholdMs"
+                  type="number"
+                  min="100"
+                  max="60000"
+                  class="w-full h-9 px-3 rounded-lg border border-slate-200 dark:border-[#1e293b] bg-slate-50 dark:bg-[#0b1324] dark:text-slate-200 text-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100"
+                />
+                <div class="text-[11px] text-slate-400">当当前优先地址最近延时持续偏高时，下一次连接会优先尝试另一条地址。</div>
+              </div>
             </div>
 
             <div class="flex flex-col gap-1.5">

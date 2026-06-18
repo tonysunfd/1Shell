@@ -233,6 +233,14 @@ function validateHostPayload(payload, { isEditing = false } = {}) {
   if (hasOwn(body, 'tailscalePort')) {
     body.tailscalePort = validateOptionalPortField(body.tailscalePort, 'tailscalePort');
   }
+  if (hasOwn(body, 'autoFailoverEnabled')) {
+    body.autoFailoverEnabled = Boolean(body.autoFailoverEnabled);
+  }
+  if (hasOwn(body, 'latencyFailoverThresholdMs')) {
+    body.latencyFailoverThresholdMs = body.latencyFailoverThresholdMs == null || body.latencyFailoverThresholdMs === ''
+      ? null
+      : ensureIntegerInRange(body.latencyFailoverThresholdMs, { field: 'latencyFailoverThresholdMs', min: 100, max: 60000 });
+  }
 
   if (hasOwn(body, 'links')) {
     body.links = validateHostLinks(body.links);
